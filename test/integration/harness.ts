@@ -32,7 +32,7 @@ import {
   readScreenAsync,
   closeSurface,
   shellEscape,
-} from "../../pi-extension/subagents/tmux.ts";
+} from "../../pi-extension/subagents/herdr.ts";
 
 // Re-export tmux primitives for tests
 export {

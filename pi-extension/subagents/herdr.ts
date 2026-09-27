@@ -1,14 +1,17 @@
 /**
- * tmux surface layer — the only terminal multiplexer this extension supports.
+ * herdr surface layer — the only terminal multiplexer this extension supports.
  *
  * Everything the extension does to a pane goes through the small API in this
  * file: create/split a pane, type a command into it, read its screen, close
- * it, and poll for exit. Keeping the tmux calls isolated here means index.ts
+ * it, and poll for exit. Keeping the herdr calls isolated here means index.ts
  * stays testable without a multiplexer running.
  *
- * Panes are identified by tmux pane ids (e.g. `%12`). Splits always target
- * the parent pi's pane (`$TMUX_PANE`) so they follow the agent rather than
+ * Panes are identified by herdr pane ids (e.g. `w2:p8`). Splits always target
+ * the parent pi's pane (`$HERDR_PANE_ID`) so they follow the agent rather than
  * the user's focus.
+ *
+ * On Windows herdr panes start PowerShell, so launch scripts are run through
+ * an explicitly resolved Git Bash — a bare `bash` there can resolve to WSL.
  */
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -17,6 +20,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const execFileAsync = promisify(execFile);
+
+const IS_WINDOWS = process.platform === "win32";
+const HERDR_BIN = process.env.HERDR_BIN || "herdr";
 
 // ── Availability ──
 
@@ -29,7 +35,11 @@ function hasCommand(command: string): boolean {
 
   let available = false;
   try {
-    execFileSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" });
+    if (IS_WINDOWS) {
+      execFileSync("where.exe", [command], { stdio: "ignore" });
+    } else {
+      execFileSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" });
+    }
     available = true;
   } catch {
     available = false;
@@ -40,25 +50,29 @@ function hasCommand(command: string): boolean {
 }
 
 /**
- * True when running inside tmux with the tmux binary on PATH.
- * `TMUX` is set by tmux in every process it spawns (shell or pane).
+ * True when running inside a herdr pane with the herdr binary on PATH.
+ * herdr injects `HERDR_ENV` and `HERDR_PANE_ID` into every pane it spawns.
  */
-export function isTmuxAvailable(): boolean {
-  return !!process.env.TMUX && hasCommand("tmux");
+export function isHerdrAvailable(): boolean {
+  return !!process.env.HERDR_ENV && !!process.env.HERDR_PANE_ID && hasCommand(HERDR_BIN);
 }
 
 export function isMuxAvailable(): boolean {
-  return isTmuxAvailable();
+  return isHerdrAvailable();
 }
 
 export function muxSetupHint(): string {
-  return "Start pi inside tmux (`tmux new -A -s pi 'pi'`).";
+  return "Start herdr (`herdr`), then run pi inside a herdr pane.";
 }
 
-function requireTmux(): void {
-  if (!isTmuxAvailable()) {
-    throw new Error(`tmux is required for subagents. ${muxSetupHint()}`);
+function requireHerdr(): void {
+  if (!isHerdrAvailable()) {
+    throw new Error(`herdr is required for subagents. ${muxSetupHint()}`);
   }
+}
+
+function herdr(args: string[]): string {
+  return execFileSync(HERDR_BIN, args, { encoding: "utf8" });
 }
 
 // ── Shell helpers ──
@@ -67,41 +81,39 @@ export function shellEscape(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
-// ── Pane layout ──
+function powershellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "''") + "'";
+}
+
+let cachedBash: string | undefined;
 
 /**
- * tmux layout applied to the subagent window to keep panes evenly sized.
- * Switchable: "even-horizontal" (equal columns, matches Ctrl+b Alt+1),
- * "main-vertical" (big main pane + tiled column), "tiled" (grid).
+ * Bash used to run launch scripts. `SUBAGENTS_BASH` overrides; on Windows we
+ * prefer Git Bash next to `git.exe` so WSL's System32 bash is never picked.
  */
-const SUBAGENT_TMUX_LAYOUT = "even-horizontal";
+function resolveBash(): string {
+  if (cachedBash) return cachedBash;
+  if (process.env.SUBAGENTS_BASH) return (cachedBash = process.env.SUBAGENTS_BASH);
+  if (!IS_WINDOWS) return (cachedBash = "bash");
 
-let rebalanceTimer: ReturnType<typeof setTimeout> | null = null;
-
-/**
- * Re-balance subagent panes so repeated splits don't leave them lopsided.
- * tmux halves the target pane on every split and dumps freed space onto a
- * neighbor on close, so without this panes drift to wildly uneven widths.
- * Applies SUBAGENT_TMUX_LAYOUT to the parent pi window. Debounced so a burst
- * of parallel spawns or staggered exits collapses into a single layout call,
- * and non-fatal: a cosmetic resize must never break spawning or watching.
- */
-function rebalanceSurfaces(hintPane?: string): void {
-  // Prefer the parent pi pane (stable; survives a closing subagent pane).
-  const target = process.env.TMUX_PANE ?? hintPane;
-  if (!target) return;
-  if (rebalanceTimer) clearTimeout(rebalanceTimer);
-  rebalanceTimer = setTimeout(() => {
-    rebalanceTimer = null;
-    try {
-      // -t <pane> resolves to that pane's window; does not change focus.
-      execFileSync("tmux", ["select-layout", "-t", target, SUBAGENT_TMUX_LAYOUT], {
-        encoding: "utf8",
-      });
-    } catch {
-      // Pane/window may be gone; balancing is best-effort.
+  const candidates: string[] = [];
+  try {
+    const gitPaths = execFileSync("where.exe", ["git"], { encoding: "utf8" })
+      .split(/\r?\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const gitPath of gitPaths) {
+      // <Git>\cmd\git.exe or <Git>\bin\git.exe → <Git>\bin\bash.exe
+      candidates.push(join(dirname(dirname(gitPath)), "bin", "bash.exe"));
     }
-  }, 120);
+  } catch {}
+  candidates.push("C:\\Program Files\\Git\\bin\\bash.exe");
+
+  const found = candidates.find((p) => existsSync(p));
+  if (!found) {
+    throw new Error("Git Bash not found. Install Git for Windows or set SUBAGENTS_BASH.");
+  }
+  return (cachedBash = found);
 }
 
 // ── Surface primitives ──
@@ -109,65 +121,64 @@ function rebalanceSurfaces(hintPane?: string): void {
 /**
  * Create a new pane for a subagent: a right split off the parent pi's pane,
  * so new panes follow the agent rather than the user's focus.
- * See https://github.com/HazAT/pi-interactive-subagents/issues/12
  *
- * Returns the new pane id (e.g. `%12`).
+ * Returns the new pane id (e.g. `w2:p8`).
  */
 export function createSurface(name: string): string {
-  void name; // tmux panes are not named; the pi process inside shows its own title.
-  return createSurfaceSplit(name, "right", process.env.TMUX_PANE);
+  return createSurfaceSplit(name, "right", process.env.HERDR_PANE_ID);
 }
 
 /**
  * Create a new split in the given direction from an optional source pane.
- * Returns the new pane id (e.g. `%12`).
+ * herdr only splits right or down; left/up map onto those.
+ * Returns the new pane id (e.g. `w2:p8`).
  */
 export function createSurfaceSplit(
   name: string,
   direction: "left" | "right" | "up" | "down",
   fromSurface?: string,
 ): string {
-  void name;
-  requireTmux();
+  requireHerdr();
 
-  const args = ["split-window", "-d"];
-  if (direction === "left" || direction === "right") {
-    args.push("-h");
-  } else {
-    args.push("-v");
-  }
-  if (direction === "left" || direction === "up") {
-    args.push("-b");
-  }
+  const args = ["pane", "split"];
   if (fromSurface) {
-    args.push("-t", fromSurface);
+    args.push("--pane", fromSurface);
+  } else {
+    args.push("--current");
   }
-  args.push("-P", "-F", "#{pane_id}");
+  args.push("--direction", direction === "left" || direction === "right" ? "right" : "down");
 
-  const pane = execFileSync("tmux", args, { encoding: "utf8" }).trim();
-  if (!pane.startsWith("%")) {
-    throw new Error(`Unexpected tmux split-window output: ${pane}`);
+  const output = herdr(args);
+  let pane: string | undefined;
+  try {
+    pane = JSON.parse(output)?.result?.pane?.pane_id;
+  } catch {}
+  if (!pane) {
+    throw new Error(`Unexpected herdr pane split output: ${output.trim()}`);
   }
 
-  rebalanceSurfaces(pane);
+  try {
+    herdr(["pane", "rename", pane, name]);
+  } catch {
+    // Pane titles are cosmetic; never fail a spawn over them.
+  }
   return pane;
 }
 
 /**
- * Send a command string to a pane and execute it.
- * Typed literally (`-l`) so special characters are not interpreted as keys,
- * then submitted with Enter.
+ * Send text to a pane and submit it with Enter.
+ * Sent literally so special characters are not interpreted as keys.
  */
 export function sendCommand(surface: string, command: string): void {
-  requireTmux();
-  execFileSync("tmux", ["send-keys", "-t", surface, "-l", command], { encoding: "utf8" });
-  execFileSync("tmux", ["send-keys", "-t", surface, "Enter"], { encoding: "utf8" });
+  requireHerdr();
+  herdr(["pane", "send-text", surface, command]);
+  herdr(["pane", "send-keys", surface, "enter"]);
 }
 
 /**
  * Send a long command to a pane by writing it to a script file first.
- * This avoids terminal line-wrapping issues that break commands exceeding the
- * pane's column width when sent character-by-character via sendCommand.
+ * This avoids terminal line-wrapping issues and keeps the command out of the
+ * pane's own shell (PowerShell on Windows) — only the bash invocation is typed.
  *
  * By default the script is written to a temp directory, but callers can pass a
  * stable path (for example under session artifacts) so the exact invocation is
@@ -198,34 +209,35 @@ export function sendLongCommand(
   writeFileSync(scriptPath, scriptParts.join("\n") + "\n", {
     mode: 0o755,
   });
-  sendCommand(surface, `bash ${shellEscape(scriptPath)}`);
+
+  const bash = resolveBash();
+  const invocation = IS_WINDOWS
+    ? `& ${powershellEscape(bash)} ${powershellEscape(scriptPath)}`
+    : `${shellEscape(bash)} ${shellEscape(scriptPath)}`;
+  sendCommand(surface, invocation);
   return scriptPath;
+}
+
+function readArgs(surface: string, lines: number): string[] {
+  return ["pane", "read", surface, "--source", "recent-unwrapped", "--lines", String(Math.max(1, lines))];
 }
 
 /**
  * Read the screen contents of a pane (sync).
  */
 export function readScreen(surface: string, lines = 50): string {
-  requireTmux();
-  return execFileSync(
-    "tmux",
-    ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
-    {
-      encoding: "utf8",
-    },
-  );
+  requireHerdr();
+  return herdr(readArgs(surface, lines));
 }
 
 /**
  * Read the screen contents of a pane (async).
  */
 export async function readScreenAsync(surface: string, lines = 50): Promise<string> {
-  requireTmux();
-  const { stdout } = await execFileAsync(
-    "tmux",
-    ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
-    { encoding: "utf8" },
-  );
+  requireHerdr();
+  const { stdout } = await execFileAsync(HERDR_BIN, readArgs(surface, lines), {
+    encoding: "utf8",
+  });
   return stdout;
 }
 
@@ -233,9 +245,8 @@ export async function readScreenAsync(surface: string, lines = 50): Promise<stri
  * Close a pane.
  */
 export function closeSurface(surface: string): void {
-  requireTmux();
-  execFileSync("tmux", ["kill-pane", "-t", surface], { encoding: "utf8" });
-  rebalanceSurfaces();
+  requireHerdr();
+  herdr(["pane", "close", surface]);
 }
 
 // ── Exit polling ──

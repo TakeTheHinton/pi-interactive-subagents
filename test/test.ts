@@ -30,7 +30,7 @@ import {
   summarizeSessionStats,
 } from "../pi-extension/subagents/session.ts";
 
-import { shellEscape } from "../pi-extension/subagents/tmux.ts";
+import { shellEscape } from "../pi-extension/subagents/herdr.ts";
 import {
   advanceStatusState,
   capStatusLines,
@@ -56,7 +56,7 @@ import {
   runningChildrenCount,
 } from "../pi-extension/subagents/subagent-done.ts";
 import subagentDoneExtension from "../pi-extension/subagents/subagent-done.ts";
-import { __pollForExitTest__ } from "../pi-extension/subagents/tmux.ts";
+import { __pollForExitTest__ } from "../pi-extension/subagents/herdr.ts";
 
 // --- Helpers ---
 
@@ -1741,7 +1741,7 @@ describe("subagent-done.ts", () => {
   });
 });
 
-describe("tmux.ts interpretExitSidecar", () => {
+describe("herdr.ts interpretExitSidecar", () => {
   const { interpretExitSidecar } = __pollForExitTest__;
 
   it("no longer decodes ping payloads (ask_question keeps the session open instead)", () => {
@@ -2652,7 +2652,7 @@ describe("subagent display helpers", () => {
   });
 });
 
-describe("tmux.ts", () => {
+describe("herdr.ts", () => {
   describe("shellEscape", () => {
     it("wraps in single quotes", () => {
       assert.equal(shellEscape("hello"), "'hello'");
