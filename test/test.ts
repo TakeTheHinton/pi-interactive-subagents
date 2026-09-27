@@ -766,7 +766,7 @@ describe("status.ts", () => {
   });
 
   it("keeps a missing snapshot as starting until the fixed watchdog threshold", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, { snapshot: "missing" }, 1_000);
 
     assert.equal(classifyStatus(state, 60_999).kind, "starting");
@@ -776,7 +776,7 @@ describe("status.ts", () => {
   });
 
   it("classifies active snapshots without aging into stalled", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 5_000,
@@ -796,7 +796,7 @@ describe("status.ts", () => {
   });
 
   it("classifies waiting snapshots as healthy idle without becoming stalled", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 10_000,
@@ -811,16 +811,8 @@ describe("status.ts", () => {
     assert.equal(snapshot.waitingDurationText, "3m");
   });
 
-  it("uses elapsed-only fallback for claude-backed subagents", () => {
-    const state = createStatusState({ source: "claude", startTimeMs: 0 });
-    const snapshot = classifyStatus(state, 125_000);
-
-    assert.equal(snapshot.kind, "running");
-    assert.equal(snapshot.elapsedText, "2m");
-  });
-
   it("detects stalled transitions and recovery", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, { snapshot: "missing" }, 1_000);
 
     let advanced = advanceStatusState(state, 95_000);
@@ -841,7 +833,7 @@ describe("status.ts", () => {
   });
 
   it("keeps the last healthy kind during transient snapshot loss", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 5_000,
@@ -861,7 +853,7 @@ describe("status.ts", () => {
 
   it("forces an active state to waiting after interrupt", () => {
     const now = 20_000;
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 5_000,
@@ -885,7 +877,7 @@ describe("status.ts", () => {
   });
 
   it("orders same-millisecond snapshots by sequence", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 10_000,
@@ -912,7 +904,7 @@ describe("status.ts", () => {
   });
 
   it("recovers from a transient snapshot read failure with the same valid snapshot", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 5_000,
@@ -943,7 +935,7 @@ describe("status.ts", () => {
   });
 
   it("ignores stale and exact old snapshots after interrupt and accepts newer snapshots", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
+    let state = createStatusState({ startTimeMs: 0 });
     state = observeStatus(state, {
       snapshot: "present",
       updatedAt: 5_000,
@@ -1002,12 +994,12 @@ describe("status.ts", () => {
   it("normalizes and truncates long newline-heavy names", () => {
     const longName = `Worker\n\n${"very-long-name-".repeat(12)}`;
     const stalledState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       { snapshot: "missing" },
       1_000,
     );
     const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       {
         snapshot: "present",
         updatedAt: 299_000,
@@ -1031,12 +1023,12 @@ describe("status.ts", () => {
 
   it("caps visible status lines and reports overflow consistently", () => {
     const waitingState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       { snapshot: "present", updatedAt: 180_000, sequence: 1, phase: "waiting", waitingSince: 180_000 },
       180_000,
     );
     const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       {
         snapshot: "present",
         updatedAt: 419_000,
@@ -2112,7 +2104,7 @@ describe("subagent interruption", () => {
       startTime: 0,
       sessionFile: "worker.jsonl",
       interactive: false,
-      statusState: createStatusState({ source: "pi", startTimeMs: 0 }),
+      statusState: createStatusState({ startTimeMs: 0 }),
       ...overrides,
     };
   }
@@ -2249,7 +2241,7 @@ describe("subagent interruption", () => {
     runningMap.clear();
 
     const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       {
         snapshot: "present",
         updatedAt: 5_000,
@@ -2304,7 +2296,7 @@ describe("subagent interruption", () => {
     runningMap.clear();
 
     const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
+      createStatusState({ startTimeMs: 0 }),
       {
         snapshot: "present",
         updatedAt: 5_000,
@@ -2507,7 +2499,7 @@ describe("subagents widget rendering", () => {
           surface: "s1",
           startTime: 1_000_000 - 13_000,
           sessionFile: "sess1",
-          statusState: createStatusState({ source: "pi", startTimeMs: 1_000_000 - 13_000 }),
+          statusState: createStatusState({ startTimeMs: 1_000_000 - 13_000 }),
         },
         {
           id: "a2",
@@ -2516,7 +2508,7 @@ describe("subagents widget rendering", () => {
           surface: "s2",
           startTime: 1_000_000 - 21_000,
           sessionFile: "sess2",
-          statusState: createStatusState({ source: "pi", startTimeMs: 1_000_000 - 21_000 }),
+          statusState: createStatusState({ startTimeMs: 1_000_000 - 21_000 }),
         },
         {
           id: "a3",
@@ -2525,7 +2517,7 @@ describe("subagents widget rendering", () => {
           surface: "s3",
           startTime: 1_000_000 - 27_000,
           sessionFile: "sess3",
-          statusState: createStatusState({ source: "pi", startTimeMs: 1_000_000 - 27_000 }),
+          statusState: createStatusState({ startTimeMs: 1_000_000 - 27_000 }),
         },
       ], 16);
 
@@ -2563,7 +2555,7 @@ describe("subagents widget rendering", () => {
           surface: "s1",
           startTime,
           sessionFile: "sess1",
-          statusState: createStatusState({ source: "pi", startTimeMs: startTime }),
+          statusState: createStatusState({ startTimeMs: startTime }),
         },
       ], width);
 

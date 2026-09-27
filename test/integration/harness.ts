@@ -2,9 +2,9 @@
  * Integration test harness for pi-interactive-subagents.
  *
  * Provides utilities to:
- * - Detect whether tmux is available
+ * - Detect whether herdr is available
  * - Create isolated test environments with test agent definitions
- * - Start real pi sessions in tmux panes
+ * - Start real pi sessions in herdr panes
  * - Poll for file creation and screen output
  * - Clean up panes and temp files after tests
  */
@@ -34,7 +34,7 @@ import {
   shellEscape,
 } from "../../pi-extension/subagents/herdr.ts";
 
-// Re-export tmux primitives for tests
+// Re-export herdr primitives for tests
 export {
   createSurface,
   createSurfaceSplit,
@@ -76,43 +76,38 @@ export const PI_TIMEOUT = Number(process.env.PI_TEST_TIMEOUT ?? "120000");
 // ── Backend detection ──
 
 /**
- * Detect whether tmux is available in the current environment.
- * Returns ["tmux"] or [].
+ * Detect whether herdr is available in the current environment.
+ * Returns ["herdr"] or [].
  */
 export function getAvailableBackends(): string[] {
-  return isMuxAvailable() ? ["tmux"] : [];
+  return isMuxAvailable() ? ["herdr"] : [];
 }
 
-export function focusSurface(surface: string): void {
-  execFileSync("tmux", ["select-pane", "-t", surface], { encoding: "utf8" });
-}
-
+/**
+ * The focused pane in the current herdr session, or null if none/unknown.
+ * herdr can only move focus by direction, so tests assert focus is unchanged
+ * rather than focusing a specific pane first.
+ */
 export function getFocusedSurface(): string | null {
   try {
-    const panes = execFileSync("tmux", ["list-panes", "-F", "#{pane_id} #{pane_active}"], {
+    const output = execFileSync(process.env.HERDR_BIN || "herdr", ["pane", "list"], {
       encoding: "utf8",
     });
-    const activeLine = panes.split("\n").find((line) => line.endsWith(" 1"));
-    return activeLine?.split(" ")[0] ?? null;
+    const panes: Array<{ pane_id: string; focused: boolean }> =
+      JSON.parse(output)?.result?.panes ?? [];
+    return panes.find((pane) => pane.focused)?.pane_id ?? null;
   } catch {
     return null;
   }
 }
 
-export async function waitForFocusedSurface(
-  surface: string,
-  timeout: number = PI_TIMEOUT,
-): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (getFocusedSurface() === surface) return;
-    await sleep(200);
-  }
-
-  throw new Error(
-    `Timeout (${timeout}ms) waiting for focused tmux pane ${surface}; ` +
-      `current focus is ${getFocusedSurface() ?? "unknown"}`,
-  );
+/**
+ * A temp-file path that node and the pane's bash resolve to the same file.
+ * `/tmp` differs between them on Windows (Git Bash maps it elsewhere), so use
+ * the OS temp dir with forward slashes.
+ */
+export function tempPath(name: string): string {
+  return join(tmpdir(), name).replace(/\\/g, "/");
 }
 
 // ── Test environment ──

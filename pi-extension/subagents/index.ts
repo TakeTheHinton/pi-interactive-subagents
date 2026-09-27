@@ -1364,9 +1364,7 @@ async function launchSubagent(
     launchScriptFile,
     activityFile,
     interactive: effectiveInteractive,
-    statusState: createStatusState({
-      source: "pi",
-      startTimeMs: startTime,
+    statusState: createStatusState({      startTimeMs: startTime,
     }),
   };
 
@@ -2107,9 +2105,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
           launchScriptFile,
           activityFile,
           interactive,
-          statusState: createStatusState({
-            source: "pi",
-            startTimeMs: startTime,
+          statusState: createStatusState({            startTimeMs: startTime,
           }),
         };
         runningSubagents.set(id, running);
