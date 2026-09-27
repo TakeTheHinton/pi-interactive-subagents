@@ -116,16 +116,109 @@ function resolveBash(): string {
   return (cachedBash = found);
 }
 
+// ── Pane layout ──
+
+/**
+ * Subagent panes this process created, top to bottom. They form one column to
+ * the right of the parent pi pane: the first splits the parent, each later one
+ * splits the bottom pane of the column.
+ *
+ * herdr halves the target pane on every split, so without this the parent
+ * (always the split target) shrinks to a sliver after a few spawns.
+ */
+const columnPanes: string[] = [];
+
+interface LayoutRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface LayoutSplit {
+  direction: "right" | "down";
+  ratio: number;
+  rect: LayoutRect;
+}
+
+/**
+ * Give every pane in the column an equal height. Best-effort: a cosmetic
+ * resize must never break spawning or watching.
+ *
+ * The split directly below pane i divides it from the panes beneath; its
+ * ratio should be 1/(panes from i down). `resize` grows the given pane toward
+ * the direction by `amount` (sign ignored), so shrinking pane i means growing
+ * pane i+1 upward.
+ */
+function rebalanceColumn(): void {
+  if (columnPanes.length < 2) return;
+  try {
+    const layout = JSON.parse(herdr(["pane", "layout", "--pane", columnPanes[0]]))?.result?.layout;
+    const rects = new Map<string, LayoutRect>(
+      (layout?.panes ?? []).map((p: { pane_id: string; rect: LayoutRect }) => [p.pane_id, p.rect]),
+    );
+    const splits: LayoutSplit[] = layout?.splits ?? [];
+
+    const column = columnPanes
+      .filter((id) => rects.has(id))
+      .sort((a, b) => rects.get(a)!.y - rects.get(b)!.y);
+
+    for (let i = 0; i < column.length - 1; i++) {
+      const rect = rects.get(column[i])!;
+      const split = splits
+        .filter(
+          (s) =>
+            s.direction === "down" &&
+            s.rect.x === rect.x &&
+            s.rect.y === rect.y &&
+            s.rect.height > rect.height,
+        )
+        .sort((a, b) => a.rect.height - b.rect.height)[0];
+      if (!split) continue;
+
+      const delta = 1 / (column.length - i) - split.ratio;
+      if (Math.abs(delta) < 0.01) continue;
+      const [pane, direction] = delta > 0 ? [column[i], "down"] : [column[i + 1], "up"];
+      herdr(["pane", "resize", "--pane", pane, "--direction", direction, "--amount", Math.abs(delta).toFixed(4)]);
+    }
+  } catch {
+    // Pane may be gone mid-rebalance; balancing is best-effort.
+  }
+}
+
+/** Drop column panes that no longer exist (e.g. closed by hand). */
+function pruneColumn(): void {
+  if (columnPanes.length === 0) return;
+  try {
+    const panes: Array<{ pane_id: string }> =
+      JSON.parse(herdr(["pane", "list"]))?.result?.panes ?? [];
+    const live = new Set(panes.map((p) => p.pane_id));
+    for (let i = columnPanes.length - 1; i >= 0; i--) {
+      if (!live.has(columnPanes[i])) columnPanes.splice(i, 1);
+    }
+  } catch {
+    // Keep the list as-is; a failed split will surface the real error.
+  }
+}
+
 // ── Surface primitives ──
 
 /**
- * Create a new pane for a subagent: a right split off the parent pi's pane,
- * so new panes follow the agent rather than the user's focus.
+ * Create a new pane for a subagent in the column to the right of the parent
+ * pi's pane, so new panes follow the agent rather than the user's focus and
+ * the parent keeps half the width.
  *
  * Returns the new pane id (e.g. `w2:p8`).
  */
 export function createSurface(name: string): string {
-  return createSurfaceSplit(name, "right", process.env.HERDR_PANE_ID);
+  pruneColumn();
+  const bottom = columnPanes[columnPanes.length - 1];
+  const pane = bottom
+    ? createSurfaceSplit(name, "down", bottom)
+    : createSurfaceSplit(name, "right", process.env.HERDR_PANE_ID, 0.5);
+  columnPanes.push(pane);
+  rebalanceColumn();
+  return pane;
 }
 
 /**
@@ -137,6 +230,7 @@ export function createSurfaceSplit(
   name: string,
   direction: "left" | "right" | "up" | "down",
   fromSurface?: string,
+  ratio?: number,
 ): string {
   requireHerdr();
 
@@ -147,6 +241,9 @@ export function createSurfaceSplit(
     args.push("--current");
   }
   args.push("--direction", direction === "left" || direction === "right" ? "right" : "down");
+  if (ratio !== undefined) {
+    args.push("--ratio", String(ratio));
+  }
 
   const output = herdr(args);
   let pane: string | undefined;
@@ -246,7 +343,10 @@ export async function readScreenAsync(surface: string, lines = 50): Promise<stri
  */
 export function closeSurface(surface: string): void {
   requireHerdr();
+  const index = columnPanes.indexOf(surface);
+  if (index !== -1) columnPanes.splice(index, 1);
   herdr(["pane", "close", surface]);
+  rebalanceColumn();
 }
 
 // ── Exit polling ──

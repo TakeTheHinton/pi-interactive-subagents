@@ -17,7 +17,13 @@ Async subagents for [pi](https://github.com/badlogic/pi-mono), running in [herdr
 
 Spawn several in parallel — they run concurrently and steer results back independently as each finishes.
 
-Each pane is labelled with the sub-agent's name. All herdr calls live in `pi-extension/subagents/herdr.ts`.
+Sub-agent panes form one column to the right of the parent pi pane: the parent keeps half the width, and the column is re-balanced to equal heights after every spawn and exit. Each pane is labelled with the sub-agent's name. All herdr calls live in `pi-extension/subagents/herdr.ts`.
+
+To run the integration tests, start them from a herdr pane. `herdr-surface` makes no LLM calls; `subagent-lifecycle` spawns real pi sessions with `PI_TEST_MODEL` (default `anthropic/claude-haiku-4-5`) and costs a few cents:
+
+```bash
+npm run test:integration
+```
 
 If your shell startup is slow and launch commands get dropped before the prompt is ready, raise the delay:
 
