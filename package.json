@@ -1,6 +1,6 @@
 {
-  "name": "subagents",
-  "version": "0.1.0",
+  "name": "pi-interactive-subagents",
+  "version": "4.0.0",
   "description": "Interactive subagents for pi - spawn, orchestrate, and manage sub-agent sessions in herdr panes",
   "keywords": [
     "pi-package"
@@ -9,7 +9,7 @@
   "author": "Amos Blomqvist",
   "repository": {
     "type": "git",
-    "url": "https://github.com/amosblomqvist/pi-interactive-subagents"
+    "url": "https://github.com/TakeTheHinton/pi-interactive-subagents"
   },
   "type": "module",
   "scripts": {

@@ -1,12 +1,12 @@
 # pi-interactive-subagents
 
-Async subagents for [pi](https://github.com/badlogic/pi-mono), running in tmux panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking.
+Async subagents for [pi](https://github.com/badlogic/pi-mono), running in [herdr](https://herdr.dev) panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking.
 
-**tmux-only fork.** See [Acknowledgements](#acknowledgements) for the upstream project, which also supports cmux, zellij, and WezTerm.
+**herdr-only fork**, with Windows support. See [Acknowledgements](#acknowledgements) for the upstream projects, which support tmux, cmux, zellij, and WezTerm.
 
 ## How it works
 
-`subagent()` returns immediately. The sub-agent runs in its own tmux pane — a right split off the parent pi pane, so pane creation never steals keyboard focus. A live widget above the input tracks every running sub-agent, and when one finishes, its result is steered into the main session as a notification that triggers a new turn.
+`subagent()` returns immediately. The sub-agent runs in its own herdr pane — a right split off the parent pi pane, so pane creation never steals keyboard focus. A live widget above the input tracks every running sub-agent, and when one finishes, its result is steered into the main session as a notification that triggers a new turn.
 
 ```
 ╭─ Subagents ──────────────────────────── 2 running ─╮
@@ -17,7 +17,7 @@ Async subagents for [pi](https://github.com/badlogic/pi-mono), running in tmux p
 
 Spawn several in parallel — they run concurrently and steer results back independently as each finishes.
 
-Panes are kept evenly sized: the extension re-applies an `even-horizontal` layout after every spawn and exit (debounced). The layout is a single constant, `SUBAGENT_TMUX_LAYOUT` in `pi-extension/subagents/tmux.ts` — change it to any named tmux layout (`main-vertical`, `tiled`, …).
+Each pane is labelled with the sub-agent's name. All herdr calls live in `pi-extension/subagents/herdr.ts`.
 
 If your shell startup is slow and launch commands get dropped before the prompt is ready, raise the delay:
 
@@ -29,7 +29,7 @@ export PI_SUBAGENT_SHELL_READY_DELAY_MS=2500   # default: 500
 
 | Tool | Description |
 | --- | --- |
-| `subagent` | Spawn a sub-agent in a dedicated tmux pane (async) |
+| `subagent` | Spawn a sub-agent in a dedicated herdr pane (async) |
 | `subagent_message` | Message a sub-agent by name — steers it if running, resumes its session if finished |
 | `subagents_list` | List available agent definitions |
 | `ask_question` | *(sub-agent sessions only)* Ask the orchestrator a question and wait for the reply |
@@ -117,7 +117,6 @@ You are a specialized agent that does X...
 | `interactive` | boolean | Whether stall/recovery transitions wake the parent (see below) |
 | `cwd` | string | Default working directory |
 | `disable-model-invocation` | boolean | Hide from `subagents_list`; still spawnable by explicit name |
-| `cli` | string | `claude` runs the agent via the Claude Code CLI instead of pi |
 
 ### session-mode
 
@@ -148,13 +147,13 @@ Extensions can register additional tools for sub-agents at runtime via `register
 
 ## Role folders
 
-`cwd` starts a sub-agent in a directory with its own config, so role-specific setups (CLAUDE.md, skills, extensions) apply:
+`cwd` starts a sub-agent in a directory with its own config, so role-specific setups (AGENTS.md, skills, extensions) apply:
 
 ```
 project/
 └── agents/
-    ├── game-designer/   ← CLAUDE.md, .pi/…
-    └── sre/             ← CLAUDE.md, .pi/…
+    ├── game-designer/   ← AGENTS.md, .pi/…
+    └── sre/             ← AGENTS.md, .pi/…
 ```
 
 ```typescript
@@ -178,15 +177,28 @@ Status display is configured via `config.json` in the extension directory (copy 
 ## Requirements
 
 - [pi](https://github.com/badlogic/pi-mono)
-- [tmux](https://github.com/tmux/tmux)
+- [herdr](https://herdr.dev) — pi must run inside a herdr pane (the extension checks for `HERDR_ENV` and `HERDR_PANE_ID`)
+- **Windows:** [Git for Windows](https://gitforwindows.org/) (for Git Bash)
+
+Start herdr, then run pi in one of its panes:
 
 ```bash
-tmux new -A -s pi 'pi'
+herdr
+pi
 ```
+
+### Windows
+
+herdr panes start PowerShell on Windows. Launch scripts are bash, so the extension runs them through Git Bash, found next to `git.exe`. It never uses a bare `bash`, because that can resolve to WSL's `C:\Windows\System32\bash.exe`.
+
+| Variable | Effect |
+| --- | --- |
+| `SUBAGENTS_BASH` | Path to the bash used for launch scripts (overrides Git Bash detection) |
+| `HERDR_BIN` | herdr binary to call (default: `herdr` on `PATH`) |
 
 ## Acknowledgements
 
-Forked from [HazAT/pi-interactive-subagents](https://github.com/HazAT/pi-interactive-subagents), which originated the subagent architecture, the multi-multiplexer surface layer, and the status widget; its supervision features were inspired by [RepoPrompt](https://repoprompt.com/).
+Forked from [amosblomqvist/pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents) (tmux-only), itself a fork of [HazAT/pi-interactive-subagents](https://github.com/HazAT/pi-interactive-subagents), which originated the subagent architecture, the multi-multiplexer surface layer, and the status widget; its supervision features were inspired by [RepoPrompt](https://repoprompt.com/). This fork replaces tmux with herdr and removes Claude Code CLI children.
 
 ## License
 
